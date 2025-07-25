@@ -1,5 +1,6 @@
 const http = require("http");
 const fs = require("fs/promises");
+const { decryptSops } = require("sops-age");
 
 const configuration_files = {};
 
@@ -23,8 +24,24 @@ exports.init = async function(node, app_config, main, host_info) {
 	let config = {};
 	let sub_apps = [];
 	try {
+		console.warn("app_config.file", app_config.file);
 		const content = await fs.readFile(app_config.file);
-		config = JSON.parse(content);
+		let configRaw = content.toString();
+		console.warn("configRaw", configRaw);
+		try {
+			// Try to decrypt as SOPS-age encrypted file
+			const decrypted = await decryptSops(configRaw, { fileType: "json" });
+			console.warn("decrypted", decrypted);
+			if (decrypted && typeof decrypted === "object" && decrypted.sops === undefined) {
+				config = decrypted;
+			} else {
+				config = JSON.parse(configRaw);
+			}
+		} catch (e) {
+			// Not a SOPS file or decryption failed, fallback to plain JSON
+			console.warn("Not a SOPS file or decryption failed, fallback to plain JSON", e);
+			config = JSON.parse(configRaw);
+		}
 		config = main.config_cleaning(config);
 		sub_apps = main.sub_config(config, this._source);
 	} catch (e) {
